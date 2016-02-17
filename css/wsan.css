@@ -1,0 +1,79 @@
+body {
+  padding-top: 60px;
+}
+
+.page {
+    display: none;
+}
+
+.page.visible {
+    display: inline;
+}
+
+.button {
+    cursor: pointer;
+}
+
+.button.On {
+    background-color: #40f140;
+}
+
+.button.On:hover {
+    color: #40f140;
+}
+
+.button.Unknown {
+    background-color: #f14040;
+}
+
+.button.Unknown:hover {
+    color: #f14040;
+    cursor: disabled;
+}
+
+.active {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.text-green {
+    color: green;
+}
+
+.text-red {
+    color: red;
+}
+
+.logo-green {
+    color: #40f140;
+}
+
+.logo-red {
+    color: #f14040;
+}
+
+/* Change the link color on hover */
+.button:hover, li a:hover {
+    background-color: #555;
+    color: white;
+}
+
+
+ul.wd {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+#connection_status {
+  white-space: nowrap;
+}
+
+.table .data_tr {
+  transition: background-color 1.5s ease-out;
+}
+
+.table .data_tr.highlight {
+  background-color: #ffffcc;
+  transition: none;
+}
+
+
