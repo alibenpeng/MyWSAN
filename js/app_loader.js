@@ -8,21 +8,73 @@ var topics = [];
 
 var pages = {};
 var active_page = {};
+var edit_mode = 0;
 
-var stations = [];
+var seen_devices = {};
 
-var sensors = [];
-var sensor_headers = {
+var sensor_headers =  {
   name: "Name",
+  val: "Value",
   light: "Light",
   temp: "Temperature",
   humi: "Humidity",
-  vsol: "Solar Cell Voltage",
-  vbat: "Battery Voltage",
+  vsol: "V Solar",
+  vbat: "V Bat.",
   moved: "Movement",
-  lowbat: "Battery Low",
-  action: "Action Executed",
+  lowbat: "Bat. Low",
 };
+
+var global_config = {
+  stations: [],
+  sensors: [],
+  buttons: [
+    { pub: "RF12/set/socket/1/1", sub: "RF12/status/socket/1/1", name: "Wohnzimmer - Stehlampe" },
+    { pub: "RF12/set/socket/2/1", sub: "RF12/status/socket/2/1", name: "Wohnzimmer - Lampe beim Fernseher" },
+    { pub: "RF12/set/socket/4/1", sub: "RF12/status/socket/4/1", name: "Esszimmer - Lampe auf dem Regal" },
+    { pub: "RF12/set/socket/3/1", sub: "RF12/status/socket/3/1", name: "Arbeitszimmer - UV-Belichter" },
+    { pub: "RF12/set/socket/5/1", sub: "RF12/status/socket/5/1", name: "Arbeitszimmer - Lampe 1" },
+    { pub: "RF12/set/socket/5/2", sub: "RF12/status/socket/5/2", name: "Arbeitszimmer - Lampe 2" },
+    { pub: "RF12/set/socket/5/3", sub: "RF12/status/socket/5/3", name: "Arbeitszimmer - Lautsprecher" },
+    { pub: "RF12/set/socket/5/4", sub: "RF12/status/socket/5/4", name: "Arbeitszimmer - leer" },
+    { pub: "RF12/set/socket/5/5", sub: "RF12/status/socket/5/5", name: "Arbeitszimmer - Display" },
+    { pub: "RF12/set/sensornode/1", sub: "RF12/status/sensornode/1", name: "Garage auf!" },
+  ],
+};
+
+
+function loadGlobals() {
+  if (localStorage.getItem('global_config')) {
+    global_config = JSON.parse(localStorage.getItem('global_config'));
+    global_config.sensor_headers = sensor_headers;
+  }
+}
+
+function saveGlobals() {
+  localStorage.setItem('global_config', JSON.stringify(global_config));
+}
+
+function getDeviceMap() {
+  mqtt.subscribe('NODE-RED/device_map', {qos: 2});
+  topics.push('NODE-RED/device_map');
+  active_page['onMessageArrived'] = function(message) {
+    global_config.device_map = JSON.parse(message.payloadString);
+    mqtt.unsubscribe('NODE-RED/device_map', {});
+    topics.push('NODE-RED/device_map');
+    render(decodeURI(window.location.hash));
+  };
+};
+
+
+$(document).ready(function() {
+  loadGlobals();
+  drawNav();
+  MQTTconnect();
+});
+
+$(window).on('hashchange', function(){
+  render(decodeURI(window.location.hash));
+});
+
 
 
 // ##############
@@ -51,7 +103,8 @@ function MQTTconnect() {
     };
 
     mqtt.onConnectionLost = onConnectionLost;
-    mqtt.onMessageArrived = onMessageArrived;
+    mqtt.onMessageArrived = function(message) { active_page['onMessageArrived'](message) };
+    //mqtt.onMessageArrived = onMessageArrived;
 
     if (username != null) {
         options.userName = username;
@@ -62,8 +115,8 @@ function MQTTconnect() {
 }
 
 function onConnect() {
+    getDeviceMap();
     updateStatus(true, 'Connected to ' + host);
-    render(decodeURI(window.location.hash));
 }
 
 function onConnectionLost(response) {
@@ -74,6 +127,7 @@ function onConnectionLost(response) {
 };
 
 
+/*
 function onMessageArrived(message) {
 
   var topic = message.destinationName;
@@ -85,6 +139,7 @@ function onMessageArrived(message) {
   active_page['onMessageArrived'](topic, payload);
 
 };
+*/
 
 
 function updateStatus(state, text) {
@@ -100,26 +155,17 @@ function updateStatus(state, text) {
 };
 
 
-$(document).ready(function() {
-    drawNav();
-    MQTTconnect();
-});
-
-$(window).on('hashchange', function(){
-  render(decodeURI(window.location.hash));
-});
-
-
-
 // Navigation
 
 function drawNav() {
   var nav_elements = [
     [ "#public_transport", "Public Transport" ],
     [ "#buttons", "Buttons!" ],
-    [ "#uv_exposer", "UV Exposure Timer" ],
-    [ "#smartmeter", "Smartmeter" ],
     [ "#sensors", "Sensors" ],
+    [ "#house", "House" ],
+    [ "#uv_exposer", "UV Exposure Timer" ],
+    [ "http://wsan1.intern.gottistdoof.net/sm/index.html", "Smartmeter" ],
+    [ "http://wsan1.intern.gottistdoof.net:1880", "Node-Red" ],
   ];
 
   var nav_bar = document.createElement("NAV");
@@ -158,11 +204,50 @@ $('.navbar-collapse').click('li', function() {
   for (index = 0; index < nav_elements.length; index++) {
     var nav_element_id = nav_elements[index][0];
     nav_element_id = nav_element_id.replace(/\//g, '-');
-    $('#nav_list').append('<li class="nav-item"><a class="nav-link" id="' + nav_element_id + '" href="' + nav_elements[index][0]+ '">' + nav_elements[index][1] + '</a></li>');
+    if (nav_elements[index][0].match(/^#/)) {
+      $('#nav_list').append('<li class="nav-item"><a class="nav-link" id="' + nav_element_id + '" href="' + nav_elements[index][0]+ '">' + nav_elements[index][1] + '</a></li>');
+    } else {
+      $('#nav_list').append('<li class="nav-item"><a class="nav-link" id="' + nav_element_id + '" target="_blank" href="' + nav_elements[index][0]+ '">' + nav_elements[index][1] + '</a></li>');
+    }
   }
+
+  var edit_div = document.createElement("DIV");
+  edit_div.id = 'edit_button_div';
+  edit_div.innerHTML = '<ul class="nav navbar-nav navbar-right"><li class="nav-item"><p class="btn edit_item" id="cancel_button" onclick="cancelEditMode()">Cancel</p></li><li class="nav-item"><p class="btn" id="edit_button" onclick="toggleEditMode()">Edit</p></li></ul>';
+  nav_collapse.appendChild(edit_div);
 
 };
 
+function toggleEditMode() {
+  var mode = 1;
+  if (document.getElementsByClassName('edit_item visible').length > 0) {
+    mode = 0;
+  }
+  setEditMode(mode);
+}
+
+function setEditMode(mode) {
+  var edit_button = document.getElementById('edit_button');
+  if (mode == true) {
+    $('.edit_item').addClass('visible');
+    edit_mode = true;
+    edit_button.innerHTML = 'Save';
+  } else {
+    $('.edit_item').removeClass('visible');
+    edit_mode = false;
+    edit_button.innerHTML = 'Edit';
+    saveGlobals();
+  }
+};
+
+function cancelEditMode() {
+  var edit_button = document.getElementById('edit_button');
+  $('.edit_item').removeClass('visible');
+  edit_mode = false;
+  edit_button.innerHTML = 'Edit';
+  loadGlobals();
+  render(decodeURI(window.location.hash));
+};
 
 
 function render(url) {
@@ -183,32 +268,38 @@ function render(url) {
   var map = {
 
     '': function() {
-      active_page['onMessageArrived'] = function(topic, payload) {
-        updateHomepage(topic, payload);
+      active_page['onMessageArrived'] = function(message) {
+        updateHomepage(message);
       };
       renderHomepage();
     },
     '#public_transport': function() {
-      active_page['onMessageArrived'] = function(topic, payload) {
-        updatePublicTransport(topic, payload);
+      active_page['onMessageArrived'] = function(message) {
+        updatePublicTransport(message);
       };
       renderPublicTransport();
     },
     '#buttons': function() {
-      active_page['onMessageArrived'] = function(topic, payload) {
-        updateButton(topic, payload);
+      active_page['onMessageArrived'] = function(message) {
+        updateButton(message);
       };
       renderButtons();
     },
+    '#house': function() {
+      active_page['onMessageArrived'] = function(message) {
+        updateHouse(message);
+      };
+      renderHouse();
+    },
     '#uv_exposer': function() {
-      active_page['onMessageArrived'] = function(topic, payload) {
-        updateUVExposer(topic, payload);
+      active_page['onMessageArrived'] = function(message) {
+        updateUVExposer(message);
       };
       renderUVExposer();
     },
     '#sensors': function() {
-      active_page['onMessageArrived'] = function(topic, payload) {
-        updateSensors(topic, payload);
+      active_page['onMessageArrived'] = function(message) {
+        updateSensors(message);
       };
       renderSensors();
     },
@@ -227,10 +318,10 @@ function render(url) {
 };
 
 
-function updateUVExposer(topic, payload){
+function updateUVExposer(message){
 };
 
-function updateHomepage(topic, payload) {
+function updateHomepage(message) {
 };
 
 function renderHomepage() {
@@ -240,7 +331,7 @@ function renderHomepage() {
 function renderPublicTransport() {
   mqtt.subscribe('WEB/public_transport/#', {qos: 0});
   topics.push('WEB/public_transport/#');
-  loadStations();
+  //loadGlobals();
   if (!pages['stations']) {
     drawStations();
     pages['stations'] = 1;
@@ -250,14 +341,10 @@ function renderPublicTransport() {
 };
 
 function renderButtons() {
-  mqtt.subscribe('raw/RF12/socket/#', {qos: 0});
-  topics.push('raw/RF12/socket/#');
-  mqtt.subscribe('raw/RF12/sensornode/#', {qos: 0});
-  topics.push('raw/RF12/sensornode/#');
-/*
-  mqtt.subscribe('home/+/+/+/#', {qos: 0});
-  topics.push('home/+/+/+/#');
-*/
+  global_config.buttons.forEach(function(e){
+    mqtt.subscribe(e.sub, {qos: 0});
+    topics.push(e.sub);
+  });
   if (!pages['buttons']) {
     drawButtons();
     pages['buttons'] = 1;
@@ -266,8 +353,8 @@ function renderButtons() {
 };
 
 function renderUVExposer() {
-  mqtt.subscribe('raw/RF12/socket/#', {qos: 0});
-  topics.push('raw/RF12/socket/#');
+  mqtt.subscribe('+/status/socket/#', {qos: 0});
+  topics.push('+/status/socket/#');
   if (!pages['exposer']) {
     drawExposer();
     pages['exposer'] = 1;
@@ -275,9 +362,21 @@ function renderUVExposer() {
   $('#uvexposer_div').addClass('visible');
 };
 
+function renderHouse() {
+  Object.keys(global_config.device_map.devices).forEach(function(e){
+    mqtt.subscribe(e, {qos: 0});
+    topics.push(e);
+  });
+  if (!pages['house']) {
+    drawHousePage();
+    pages['house'] = 1;
+  }
+  $('#house_div').addClass('visible');
+};
+
 function renderSensors() {
-  mqtt.subscribe('raw/RF12/sensornode/#', {qos: 0});
-  topics.push('raw/RF12/sensornode/#');
+  mqtt.subscribe('+/status/sensornode/#', {qos: 0});
+  topics.push('+/status/sensornode/#');
   if (!pages['sensors']) {
     drawSensorPage();
     pages['sensors'] = 1;
@@ -298,19 +397,10 @@ function renderErrorPage() {
 // public transport functions
 // ##########################
 
-function loadStations() {
-  if (localStorage.getItem('stations')) {
-    stations = JSON.parse(localStorage.getItem('stations'));
-  }
-}
-
-function saveStations() {
-  localStorage.setItem('stations', JSON.stringify(stations));
-}
-
-
-function updateStation(topic, payload) {
-  topic = topic.replace(/-/g, '/');
+function updateStation(message) {
+  var topic = message.destinationName;
+  var payload = message.payloadString;
+  //topic = topic.replace(/-/g, '/');
   var real_payload = new String;
   real_payload = payload;
   mqtt.send(topic, real_payload);
@@ -334,7 +424,7 @@ function drawStations() {
   dep_table.setAttribute("id", "departures");
   dep_table.classList.add('table', 'table-striped');
 
-  stations.forEach(function(station){
+  global_config.stations.forEach(function(station){
 
     var click_payload = JSON.stringify(station);
 
@@ -353,12 +443,15 @@ function drawStations() {
     update_button.id = 'public_transpoort_update-' + station.name;
     update_button.innerHTML = 'Update';
     update_button.classList.add('button', 'Update');
-    update_button.onclick = function(){ updateStation('WEB-public_transport-get', click_payload);};
+    var msg = {};
+    msg.payloadString = click_payload;
+    msg.destinationName = 'WEB-public_transport-get';
+    update_button.onclick = function(){ updateStation(msg);};
 
     var delete_button = document.createElement("BUTTON");
     delete_button.id = 'public_transpoort_delete-' + station.name;
     delete_button.innerHTML = 'Delete';
-    delete_button.classList.add('button', 'Delete');
+    delete_button.classList.add('edit_item', 'button', 'Delete');
     delete_button.onclick = function(){ deleteStation(station);};
 
     header_div_name.appendChild(header_text);
@@ -382,11 +475,17 @@ function drawStations() {
     }
   });
 
+
+  var form = document.createElement('FORM');
+  form.classList.add('edit_item');
+  form.innerHTML = ' <input type="text" id="sta_name" placeholder="Station Name"></input> <input type="text" id="display_lines" placeholder="Number of results"></input> <input type="text" id="time_offset" placeholder="Time offset"></input> <button onclick="addStation()">Add</button>';
+  dep_div.appendChild(form);
+
   dep_div.appendChild(dep_table);
   main_div.appendChild(dep_div);
-  drawInputForm();
 
-  saveStations();
+  setEditMode(edit_mode);
+  //saveGlobals();
 
 };
 
@@ -395,26 +494,17 @@ function addStation() {
   var dl = document.getElementById('display_lines');
   var to = document.getElementById('time_offset');
   
-  stations.push({name: sta.value || 'Königstraße', display_lines: dl.value || 4, time_offset: to.value || 6});
+  global_config.stations.push({name: sta.value || 'Königstraße', display_lines: dl.value || 4, time_offset: to.value || 6});
   drawStations();
   $('#pubtrans_div').addClass('visible');
   updateAllStations();
 };
 
-function drawInputForm() {
-  var form = document.createElement('FORM');
-  form.innerHTML = ' <input type="text" id="sta_name" placeholder="Station Name"></input> <input type="text" id="display_lines" placeholder="Number of results"></input> <input type="text" id="time_offset" placeholder="Time offset"></input> <button onclick="addStation()">Add</button>';
-  pt_el = document.getElementById('pubtrans_div');
-  if (pt_el) {
-    pt_el.appendChild(form)
-  }
-};
-
 function deleteStation(station) {
-  var filtered = stations.filter(function(el) {
+  var filtered = global_config.stations.filter(function(el) {
     return (el != station);
   });
-  stations = filtered;
+  global_config.stations = filtered;
   drawStations();
   $('#pubtrans_div').addClass('visible');
   updateAllStations();
@@ -422,14 +512,19 @@ function deleteStation(station) {
 };
 
 function updateAllStations() {
-    stations.forEach(function(station){
+    global_config.stations.forEach(function(station){
       var click_payload = JSON.stringify(station);
-      updateStation('WEB-public_transport-get', click_payload);
+      var msg = {};
+      msg.payloadString = click_payload;
+      msg.destinationName = 'WEB-public_transport-get';
+      updateStation(msg);
     });
 };
 
 
-function updatePublicTransport(topic, payload) {
+function updatePublicTransport(message) {
+  var topic = message.destinationName;
+  var payload = message.payloadString;
   var p = JSON.parse(payload);
   var station = p.station;
   var index = p.index;
@@ -450,84 +545,131 @@ function updatePublicTransport(topic, payload) {
 // Buttons
 // #######
 
-/*
-var buttons = [
-  [ "home/livingroom/windowright/lamp", "Wohnzimmer - Stehlampe" ],
-  [ "home/livingroom/tvcorner/lamp", "Wohnzimmer - Lampe beim Fernseher" ],
-  [ "home/lab/behindrouter/uvexposer", "Arbeitszimmer - UV-Belichter" ],
-  [ "home/diningroom/onbigshelf/lamp", "Esszimmer - Lampe auf dem Regal" ],
-  [ "home/lab/shelfbydesk/desklamp", "Arbeitszimmer - Lampe 1" ],
-  [ "home/lab/shelfbydesk/uvsafelamp", "Arbeitszimmer - Lampe 2" ],
-  [ "home/lab/shelfbydesk/speakers", "Arbeitszimmer - Lautsprecher" ],
-  [ "home/lab/shelfbydesk/empty4", "Arbeitszimmer - leer" ],
-  [ "home/lab/shelfbydesk/empty5", "Arbeitszimmer - leer" ],
-  [ "home/balcony/ballustraderight/sensor", "Garage auf!" ],
-];
-
-*/
-var buttons = [
-  [ "raw/RF12/socket/1/1", "Wohnzimmer - Stehlampe" ],
-  [ "raw/RF12/socket/2/1", "Wohnzimmer - Lampe beim Fernseher" ],
-  [ "raw/RF12/socket/3/1", "Arbeitszimmer - UV-Belichter" ],
-  [ "raw/RF12/socket/4/1", "Esszimmer - Lampe auf dem Regal" ],
-  [ "raw/RF12/socket/5/1", "Arbeitszimmer - Lampe 1" ],
-  [ "raw/RF12/socket/5/2", "Arbeitszimmer - Lampe 2" ],
-  [ "raw/RF12/socket/5/3", "Arbeitszimmer - Lautsprecher" ],
-  [ "raw/RF12/socket/5/4", "Arbeitszimmer - leer" ],
-  [ "raw/RF12/socket/5/5", "Arbeitszimmer - leer" ],
-  [ "raw/RF12/sensornode/1", "Garage auf!" ],
-];
-
-
-
-function onButtonClicked(topic, payload) {
-  var real_topic = topic.id;
-  real_topic = real_topic.replace(/-/g, '/');
-  var real_payload = new String;
-  real_payload = payload;
-  mqtt.send(real_topic + "/set", real_payload);
-};
-
 function drawButtons() {
   var main_div = document.getElementById('content');
   
-  var buttons_div = document.createElement("DIV");
-  buttons_div.classList.add('page');
-  buttons_div.id = 'buttons_div';
-  
+  var buttons_div = document.getElementById("buttons_div");
+  if (buttons_div) {
+    buttons_div.innerHTML = '';
+  } else {
+    buttons_div = document.createElement("DIV");
+    buttons_div.classList.add('page');
+    buttons_div.id = 'buttons_div';
+  }
+
   var buttongroup_div = document.createElement("DIV");
   buttongroup_div.classList.add('btn-group', 'btn-group-vertical');
   buttongroup_div.id = 'buttons';
 
+  var form = document.createElement('FORM');
+  form.classList.add('edit_item');
+  form.innerHTML = '<input type="text" id="pub" placeholder="Pub Topic"></input> <input type="text" id="sub" placeholder="Subscribe Topic"></input> <input type="text" id="name" placeholder="Name"> <input type="text" id="payload" placeholder="Payload (int)"></input> <button class="button" onclick="addButton()">Add</button>';
+  buttons_div.appendChild(form);
+
   buttons_div.appendChild(buttongroup_div);
   main_div.appendChild(buttons_div);
 
-  for (index = 0; index < buttons.length; index++) {
-    var button_id = buttons[index][0];
-    button_id = button_id.replace(/\//g, '-');
+  global_config.buttons.forEach(function(e, i) {
+    var button_id = e.sub.replace(/\//g, '-') + e.pub.replace(/\//g, '-');
+    var button_id = 'button-' + i;
+    e.id = button_id;
     console.log("button_id: " + button_id);
-    $('#buttons').append('<button class="btn btn-lg btn-secondary button Unknown" id="' + button_id + '">' + buttons[index][1] + '</button>');
-  }
+    $('#buttons').append('<button type="button" class="btn btn-lg btn-secondary button Unknown" id="' + button_id + '">' + e.name + '</button><button class="btn-sm button edit_item" id="' + button_id + '-delete">delete</button>');
+
+    var button_el = document.getElementById(button_id);
+    button_el.onclick = function(){ mqtt.send(e.pub, e.payload);};
+
+    var delete_button = document.getElementById(button_id + '-delete');
+    delete_button.onclick = function(){ deleteButton(e); };
+  });
+
 
 };
 
-function updateButton(topic, payload) {
-  topic = topic.replace(/-[^-]+$/, '');
-  var button_el = document.getElementById(topic);
+function updateButton(message) {
+  var topic = message.destinationName;
+  var payload = message.payloadString;
+  
   var click_payload = "0";
   if (payload == 0) {
     click_payload = "1";
   }
-  if(button_el) {
-    button_el.onclick = function(){ onButtonClicked(this, click_payload);};
-    button_el.classList.remove('Unknown', 'On', 'Off');
-    if (payload == 1) {
-      button_el.classList.add('On');
-    } else {
-      button_el.classList.add('Off');
+
+  global_config.buttons.forEach(function(e, i) {
+    if (topic == e.sub) {
+      var button_el = document.getElementById(e.id);
+      if (button_el) {
+        if (!e.payload) {
+          button_el.onclick = function(){ mqtt.send(e.pub, click_payload);};
+        }
+        button_el.classList.remove('Unknown', 'On', 'Off');
+        if (payload === "1") {
+          button_el.classList.add('On');
+        } else if (payload === "0") {
+          button_el.classList.add('Off');
+        } else {
+          try { var p = JSON.parse(payload); } catch(err) { }
+          if (p) {
+            if ((!p.display) || (p.display == '##reset##')) {
+              p.display = e.name;
+            }
+            button_el.innerHTML = p.display;
+            if (p.val == 1) {
+              button_el.classList.add('On');
+            } else if (p.val == 0) {
+              button_el.classList.add('Off');
+            }
+          }
+        }
+      }
     }
-  }
+
+/*
+    if (e.payload) {
+      var button_el = document.getElementById(e.id);
+      if (button_el) {
+        button_el.onclick = function(){ mqtt.send(e.pub, e.payload);};
+        button_el.classList.remove('Unknown', 'On', 'Off');
+        button_el.classList.add('Off');
+      }
+    }
+*/
+  });
 };
+
+function addButton() {
+  var pub = document.getElementById('pub');
+  var sub = document.getElementById('sub');
+  var name = document.getElementById('name');
+  var payload = document.getElementById('payload');
+  
+  global_config.buttons.push({pub: pub.value, sub: sub.value, name: name.value, payload: payload.value});
+  drawButtons();
+  $('#buttons_div').addClass('visible');
+  setEditMode(edit_mode);
+  updateAllButtons();
+};
+
+
+function deleteButton(button) {
+  var filtered = global_config.buttons.filter(function(el) {
+    return (el != button);
+  });
+  global_config.buttons = filtered;
+  drawButtons();
+  $('#buttons_div').addClass('visible');
+  setEditMode(edit_mode);
+  updateAllButtons();
+};
+
+function updateAllButtons() {
+  global_config.buttons.forEach(function(e){
+    mqtt.unsubscribe(e.sub, {});
+    mqtt.subscribe(e.sub, {qos: 0});
+    //topics.push(e.sub);
+  });
+};
+
 
 // ##########
 // UV exposer
@@ -540,9 +682,9 @@ var timers = [
   [ 300, "Expose Soldermask" ],
   [ 900, "Cure Soldermask" ],
 ];
-var safe_lights = [ "raw/RF12/socket/5/2" ];
-var unsafe_lights = [ "raw/RF12/socket/5/1" ];
-var exposer_address = "raw/RF12/socket/5/5";
+var safe_lights = [ "RF12/set/socket/5/2" ];
+var unsafe_lights = [ "RF12/set/socket/5/1" ];
+var exposer_address = "RF12/set/socket/5/4";
 
 function drawExposer() {
   var main_div = document.getElementById('content');
@@ -575,16 +717,15 @@ function startTimer(seconds) {
   var button_el = document.getElementById('button-' + seconds);
   var orig_html = button_el.innerHTML;
   button_el.disabled = true;
-  mqtt.send(exposer_address + "/set", "1");
+  mqtt.send(exposer_address, "1");
   var ti_id = setInterval(function() {
     if (seconds > 0) {
       button_el.innerHTML = --seconds + ' seconds';
     } else {
-      mqtt.send(exposer_address + "/set", "0");
+      mqtt.send(exposer_address, "0");
       clearInterval(ti_id);
       button_el.innerHTML = orig_html;
       button_el.disabled = false;
-      //drawExposer();
     }
   }, 1000);
 };
@@ -610,9 +751,9 @@ function drawSensorPage() {
   var body = document.createElement("TBODY");
   body.id = 'sensors-tbody';
 
-  Object.keys(sensor_headers).forEach(function(e, i, a) {
+  Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
     var header_cell = document.createElement("TH");
-    var header_text = document.createTextNode(sensor_headers[e]);
+    var header_text = document.createTextNode(global_config.sensor_headers[e]);
 
     header_cell.appendChild(header_text);
     header_row.appendChild(header_cell);
@@ -626,37 +767,38 @@ function drawSensorPage() {
   main_div.appendChild(sensor_div);
 
 
-  sensors.forEach(function(entry, index, a) {
+  global_config.sensors.forEach(function(entry, index, a) {
         var sensor_row = document.createElement("TR");
-        sensor_row.setAttribute("id", sensors.name + '-' + index);
+        sensor_row.setAttribute("id", global_config.sensors.name + '-' + index);
         body.appendChild(sensor_row);
   });
   
 }
 
-function updateSensors(topic, payload) {
+function updateSensors(message) {
+  var topic = message.destinationName;
+  var payload = message.payloadString;
   var p = JSON.parse(payload);
-  var name = topic.replace(/raw-(.*)-data/, '$1');
-  var index = p.index;
-  sensors[topic] = p;
-  sensors[topic]["name"] = name;
+  var name = topic.replace(/^([^\/]+)\/[^\/]+\/(.*)/, '$1/+/$2');
+  global_config.sensors[topic] = p;
+  global_config.sensors[topic]["name"] = global_config.device_map.devices[name]['display_name'];
 
   var row_el = document.getElementById(name);
   if (!row_el) {
     var tbody_el = document.getElementById('sensors-tbody');
     row_el = document.createElement("TR");
-    row_el.classList.add('data_tr');
+    row_el.classList.add('dev_tr');
     row_el.id = name;
     tbody_el.appendChild(row_el);
-    Object.keys(sensor_headers).forEach(function(e, i, a) {
+    Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
       var td = document.createElement("TD");
       td.id = e;
       row_el.appendChild(td);
     });
   }
-  Object.keys(sensor_headers).forEach(function(e, i, a) {
+  Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
     td = document.getElementById(e);
-    td.innerHTML = sensors[topic][e];
+    td.innerHTML = global_config.sensors[topic][e];
   });
   row_el.classList.add('highlight');
   setTimeout(function() {
@@ -667,3 +809,131 @@ function updateSensors(topic, payload) {
 
 
 
+// #####
+// House
+// #####
+
+function drawHousePage() {
+  var rooms = global_config.device_map.rooms;
+  var devices = global_config.device_map.devices;
+
+  var main_div = document.getElementById('content');
+
+  var house_div = document.createElement("DIV");
+  house_div.classList.add('page');
+  house_div.id = 'house_div';
+
+  // Draw a table with rooms as section headers
+  var house_table = document.createElement("TABLE");
+  house_table.classList.add('table', 'table-condensed');
+  house_table.id = 'house_table';
+
+  var header = document.createElement("THEAD");
+  var header_row = document.createElement("TR");
+  //var body = document.createElement("TBODY");
+  //body.id = 'house_tbody';
+
+  header.appendChild(header_row);
+  house_table.appendChild(header);
+  house_div.appendChild(house_table);
+  main_div.appendChild(house_div);
+
+  // generate the header row with sensor_headers
+  Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
+    var header_cell = document.createElement("TH");
+    var header_text = document.createTextNode(global_config.sensor_headers[e]);
+
+    header_cell.appendChild(header_text);
+    header_row.appendChild(header_cell);
+
+  });
+
+
+  Object.keys(rooms).forEach(function(e, i, a){
+    
+    // every room gets its own tbody
+    var body = document.createElement("TBODY");
+    body.id = e + '_tbody';
+
+    var header_row = document.createElement("TR");
+
+    var header_cell_name = document.createElement("TH");
+
+    var header_div_name = document.createElement("DIV");
+    header_div_name.classList.add('buttonlike');
+
+    var header_text = document.createTextNode(rooms[e]);
+
+
+    // assemble tbody in reverse order and attach to main table
+    header_div_name.appendChild(header_text);
+    header_cell_name.appendChild(header_div_name);
+    header_row.appendChild(header_cell_name);
+    body.appendChild(header_row);
+    house_table.appendChild(body);
+  });
+}
+
+function updateHouse(message) {
+
+  var changed = 0;
+  var topic = message.destinationName;
+  var payload = message.payloadString;
+  var dev_key = topic.replace(/^([^\/]+)\/[^\/]+\/(.*)/, '$1/+/$2');
+  var dev_id = dev_key.replace(/\//g, '-');
+  var dev = global_config.device_map.devices[dev_key];
+  var room = dev.location_topic.replace(/\+\/home\/([^\/]+)\/.*/, '$1');
+
+  try { var p_obj = JSON.parse(payload); }catch(err){}
+
+
+  var row_el = document.getElementById(dev_id + '_row');
+  if (!row_el) {
+    var tbody_el = document.getElementById(room + '_tbody');
+    row_el = document.createElement("TR");
+    row_el.classList.add('dev_tr');
+    row_el.id = dev_id + '_row';
+    tbody_el.appendChild(row_el);
+    Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
+      var td = document.createElement("TD");
+      td.id = dev_id + '_' + e;
+      row_el.appendChild(td);
+    });
+
+    seen_devices[dev_key] = dev;
+  }
+
+  
+  if (typeof(p_obj.val) !== 'undefined') {
+    // payload is in deed an object!
+    p_obj.name = dev.display_name;
+    Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
+      if (seen_devices[dev_key][e] !== p_obj[e]) {
+        td = document.getElementById(dev_id + '_' + e);
+        td.innerHTML = p_obj[e];
+        seen_devices[dev_key][e] = p_obj[e];
+        changed = 1;
+      }
+    });
+  } else {
+    // payload is just a simple value
+    if (seen_devices[dev_key]['val'] !== payload) {
+      if (payload == 1) {
+        row_el.classList.add('success');
+      }
+      td = document.getElementById(dev_id + '_name');
+      td.innerHTML = dev.display_name;
+      td = document.getElementById(dev_id + '_val');
+      td.innerHTML = payload;
+      seen_devices[dev_key]['val'] = payload;
+      changed = 1;
+    }
+  }
+  if (changed == 1) {
+    row_el.classList.add('highlight');
+    setTimeout(function() {
+      row_el.classList.remove('highlight');
+    }, 10);
+  }
+
+}

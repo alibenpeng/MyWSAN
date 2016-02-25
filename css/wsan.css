@@ -58,6 +58,13 @@ body {
     color: white;
 }
 
+.edit_item {
+  display: none;
+}
+
+.edit_item.visible {
+  display: inline-flex;
+}
 
 ul.wd {
   font-family: 'Courier New', Courier, monospace;
@@ -67,11 +74,11 @@ ul.wd {
   white-space: nowrap;
 }
 
-.table .data_tr {
+.table .dev_tr {
   transition: background-color 1.5s ease-out;
 }
 
-.table .data_tr.highlight {
+.table .dev_tr.highlight {
   background-color: #ffffcc;
   transition: none;
 }
