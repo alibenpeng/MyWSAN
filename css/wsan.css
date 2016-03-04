@@ -84,3 +84,104 @@ ul.wd {
 }
 
 
+.housepage {
+  display: inline-flex;
+  flex-wrap: wrap;
+  font-size: large;
+}
+
+.roombox {
+  display: flex;
+  flex: 1 0 20%;
+  flex-flow: column nowrap;
+  border: 1px solid #3f3f3f;
+  margin: 1em;
+}
+
+.roomheader {
+  display: flex;
+  flex-flow: row nowrap;
+  border: 1px none black;
+  padding: 0.3em;
+  justify-content: space-between;
+  background-color: #3f3f3f;
+  color: #ffffff;
+}
+
+.roomname {
+  display: inline;
+  border: 1px none black;
+  padding: 0.3em;
+  margin: 0.1em;
+  font-weight: bold;
+}
+
+.roominfo {
+  display: flex;
+  flex-flow: column nowrap;
+  flex-grow: 0.1;
+  border: 1px none black;
+  padding: 0.3em;
+  margin: 0.1em;
+  font-size: x-small;
+  line-height: 1;
+}
+
+.roominfoitem {
+  display: flex;
+  flex-flow: row nowrap;
+  border: 1px none black;
+  justify-content: space-between;
+}
+
+.cell_left {
+  text-align: left;
+  width: 100%;
+}
+
+.cell_right {
+  text-align: right;
+  width: 100%;
+}
+
+.roomsubheader {
+  padding: 0em 0.2em;
+  margin: 0.1em 0em;
+  background: #8a8a8a;
+  color: white;
+  font-size: small;
+}
+
+
+.roombutton {
+  border: 1px none #cccccc;
+  padding: 0.2em 0.4em;
+  /* margin: 0.1em 0.3em; */
+}
+
+.roombutton.decay {
+  transition: background-color 10s, color 10s;
+}
+
+.roombutton.On {
+  border: 1px none grey;
+}
+
+/* mobile styles */
+@media only screen and (max-device-width: 720px) {
+
+  .roombox {
+    display: flex;
+    flex: 1 0 90%;
+    flex-flow: column nowrap;
+    margin: 0.5em;
+  }
+
+  .active {
+      background-color: #fff;
+  }
+
+
+
+}
+

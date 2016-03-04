@@ -10,7 +10,17 @@ var pages = {};
 var active_page = {};
 var edit_mode = 0;
 
-var seen_devices = {};
+var device_map = {};
+var devs_by_room = [];
+
+//var seen_devices = {};
+
+var roomheader_tags =  {
+  temp: [ "Temp:", "°C" ],
+  humi: [ "Humi:", "%" ],
+  light: [ "Light", "lx" ],
+  vbat: [ "Bat:", "V" ],
+};
 
 var sensor_headers =  {
   name: "Name",
@@ -46,7 +56,10 @@ function loadGlobals() {
   if (localStorage.getItem('global_config')) {
     global_config = JSON.parse(localStorage.getItem('global_config'));
     global_config.sensor_headers = sensor_headers;
+    global_config.roomheader_tags = roomheader_tags;
   }
+
+  global_config.button_timers = {};
 }
 
 function saveGlobals() {
@@ -55,11 +68,31 @@ function saveGlobals() {
 
 function getDeviceMap() {
   mqtt.subscribe('NODE-RED/device_map', {qos: 2});
-  topics.push('NODE-RED/device_map');
   active_page['onMessageArrived'] = function(message) {
     global_config.device_map = JSON.parse(message.payloadString);
     mqtt.unsubscribe('NODE-RED/device_map', {});
-    topics.push('NODE-RED/device_map');
+
+    // populate a few local (to the browser) objects
+    device_map = global_config.device_map.devices;
+
+    Object.keys(global_config.device_map.rooms).forEach(function(e){
+      devs_by_room[e] = [];
+    });
+
+    Object.keys(device_map).forEach(function(e){
+      // get the device object
+      var dev = device_map[e];
+
+      dev.room = dev.location_topic.replace(/\+\/home\/([^\/]+)\/.*/, '$1');
+      dev.pub_topic = e.replace(/\+/, 'set');
+      dev.sub_topic = e.replace(/\+/, 'status');
+
+      devs_by_room[dev.room].push(e);
+
+      //write the object back
+      device_map[e] = dev;
+    });
+
     render(decodeURI(window.location.hash));
   };
 };
@@ -160,10 +193,8 @@ function updateStatus(state, text) {
 function drawNav() {
   var nav_elements = [
     [ "#public_transport", "Public Transport" ],
-    [ "#buttons", "Buttons!" ],
     [ "#sensors", "Sensors" ],
-    [ "#house", "House" ],
-    [ "#uv_exposer", "UV Exposure Timer" ],
+    [ "#buttons", "Buttons" ],
     [ "http://wsan1.intern.gottistdoof.net/sm/index.html", "Smartmeter" ],
     [ "http://wsan1.intern.gottistdoof.net:1880", "Node-Red" ],
   ];
@@ -195,11 +226,7 @@ function drawNav() {
   nav_container.appendChild(nav_collapse);
   nav_collapse.appendChild(nav_list);
 
-  $('#nav_header').prepend(' <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#nav_collapse"> <span class="icon-bar"></span> <span class="icon-bar"></span> <span class="icon-bar"></span>                        </button> <a class="navbar-brand" href="#"> <span id="server_status" class="logo-red" aria-hidden="true">MyWSAN</span></a>');
-
-$('.navbar-collapse').click('li', function() {
-  $('.navbar-collapse').collapse('hide');
-});
+  $('#nav_header').prepend(' <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#nav_collapse"> <span class="icon-bar"></span> <span class="icon-bar"></span> <span class="icon-bar"></span>                        </button> <a class="navbar-brand" href="#"> <span id="server_status" class="logo-red" aria-hidden="true">Home</span></a>');
 
   for (index = 0; index < nav_elements.length; index++) {
     var nav_element_id = nav_elements[index][0];
@@ -213,8 +240,17 @@ $('.navbar-collapse').click('li', function() {
 
   var edit_div = document.createElement("DIV");
   edit_div.id = 'edit_button_div';
-  edit_div.innerHTML = '<ul class="nav navbar-nav navbar-right"><li class="nav-item"><p class="btn edit_item" id="cancel_button" onclick="cancelEditMode()">Cancel</p></li><li class="nav-item"><p class="btn" id="edit_button" onclick="toggleEditMode()">Edit</p></li></ul>';
+  edit_div.innerHTML = '<ul class="nav navbar-nav navbar-right"><li class="nav-item"><p class="btn edit_item" id="cancel_button" role="button" onclick="cancelEditMode()">Cancel</p></li><li class="nav-item"><p class="btn" id="edit_button" role="button" onclick="toggleEditMode()">Edit</p></li></ul>';
   nav_collapse.appendChild(edit_div);
+
+  // collapse the navbar if a link is clicked
+  $('.navbar-collapse').click('li', function() {
+    $('.navbar-collapse').collapse('hide');
+  });
+
+  $('.navbar-brand').click('span', function() {
+    $('.navbar-collapse').collapse('hide');
+  });
 
 };
 
@@ -269,9 +305,9 @@ function render(url) {
 
     '': function() {
       active_page['onMessageArrived'] = function(message) {
-        updateHomepage(message);
+        updateHouse(message);
       };
-      renderHomepage();
+      renderHouse();
     },
     '#public_transport': function() {
       active_page['onMessageArrived'] = function(message) {
@@ -284,12 +320,6 @@ function render(url) {
         updateButton(message);
       };
       renderButtons();
-    },
-    '#house': function() {
-      active_page['onMessageArrived'] = function(message) {
-        updateHouse(message);
-      };
-      renderHouse();
     },
     '#uv_exposer': function() {
       active_page['onMessageArrived'] = function(message) {
@@ -386,7 +416,7 @@ function renderSensors() {
 
 function renderErrorPage() {
   if (!pages['error']) {
-    $('#error_div').html('<h1>Well, fuck.</h1>');
+    $('#error_div').html('<h1>Well, fuck.</h1><p>Try the <a href="#">Homepage</a></p>');
     pages['error'] = 1;
   }
   $('#error_div').addClass('visible');
@@ -400,7 +430,7 @@ function renderErrorPage() {
 function updateStation(message) {
   var topic = message.destinationName;
   var payload = message.payloadString;
-  //topic = topic.replace(/-/g, '/');
+  topic = topic.replace(/-/g, '/');
   var real_payload = new String;
   real_payload = payload;
   mqtt.send(topic, real_payload);
@@ -429,6 +459,7 @@ function drawStations() {
     var click_payload = JSON.stringify(station);
 
     var header = document.createElement("THEAD");
+    header.classList.add('thead-inverse');
     var header_row = document.createElement("TR");
     var header_cell_name = document.createElement("TH");
     var header_div_name = document.createElement("DIV");
@@ -747,6 +778,7 @@ function drawSensorPage() {
   sensor_table.id = 'sensor_table';
 
   var header = document.createElement("THEAD");
+  header.classList.add('thead-inverse');
   var header_row = document.createElement("TR");
   var body = document.createElement("TBODY");
   body.id = 'sensors-tbody';
@@ -823,117 +855,159 @@ function drawHousePage() {
   house_div.classList.add('page');
   house_div.id = 'house_div';
 
-  // Draw a table with rooms as section headers
-  var house_table = document.createElement("TABLE");
-  house_table.classList.add('table', 'table-condensed');
-  house_table.id = 'house_table';
+  var housepage = document.createElement("DIV");
+  housepage.classList.add('housepage');
+  housepage.id = 'housepage';
 
-  var header = document.createElement("THEAD");
-  var header_row = document.createElement("TR");
-  //var body = document.createElement("TBODY");
-  //body.id = 'house_tbody';
-
-  header.appendChild(header_row);
-  house_table.appendChild(header);
-  house_div.appendChild(house_table);
-  main_div.appendChild(house_div);
-
-  // generate the header row with sensor_headers
-  Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
-    var header_cell = document.createElement("TH");
-    var header_text = document.createTextNode(global_config.sensor_headers[e]);
-
-    header_cell.appendChild(header_text);
-    header_row.appendChild(header_cell);
-
-  });
-
-
-  Object.keys(rooms).forEach(function(e, i, a){
+  Object.keys(rooms).forEach(function(roomkey, i, a){
     
-    // every room gets its own tbody
-    var body = document.createElement("TBODY");
-    body.id = e + '_tbody';
+    // create a box for every room
+    var roombox = document.createElement("DIV");
+    roombox.id = roomkey + '_roombox';
+    roombox.classList.add('roombox');
+    housepage.appendChild(roombox);
 
-    var header_row = document.createElement("TR");
+    // a header box
+    var roomheader = document.createElement("DIV");
+    roomheader.id = roomkey + '_roomheader';
+    roomheader.classList.add('roomheader');
+    roombox.appendChild(roomheader);
 
-    var header_cell_name = document.createElement("TH");
+    // a name tag
+    var roomname = document.createElement("DIV");
+    roomname.id = roomkey + '_roomname';
+    roomname.classList.add('roomname');
+    roomname.innerHTML = rooms[roomkey];
+    roomheader.appendChild(roomname);
 
-    var header_div_name = document.createElement("DIV");
-    header_div_name.classList.add('buttonlike');
 
-    var header_text = document.createTextNode(rooms[e]);
+    // build the info table
+    var roominfo = document.createElement("DIV");
+    roominfo.id = roomkey + '_roominfo';
+    roominfo.classList.add('roominfo');
+    roomheader.appendChild(roominfo);
 
+    Object.keys(global_config.roomheader_tags).forEach(function(e, i, a) {
+      var roominfoitem = document.createElement("DIV");
+      roominfoitem.classList.add('roominfoitem');
+      roominfoitem.id = roomkey + '_' + e;
+      roominfo.appendChild(roominfoitem);
+    });
 
-    // assemble tbody in reverse order and attach to main table
-    header_div_name.appendChild(header_text);
-    header_cell_name.appendChild(header_div_name);
-    header_row.appendChild(header_cell_name);
-    body.appendChild(header_row);
-    house_table.appendChild(body);
+    // populate the button stack
+    var grouped_buttons = [];
+    devs_by_room[roomkey].forEach(function(devkey){
+      if (device_map[devkey].type == 'onoff_group') {
+        var roomsubheader = document.createElement("DIV");
+        roomsubheader.id = roomkey + '_roomsubheader';
+        roomsubheader.innerHTML = device_map[devkey].display_name;
+        roomsubheader.classList.add('roomsubheader');
+        roombox.appendChild(roomsubheader);
+
+        device_map[devkey].members.forEach(function(memberkey){
+          createButton(roombox, memberkey, 'Unknown');
+          grouped_buttons.push(memberkey);
+        });
+      } else if (device_map[devkey].type == 'onoff') {
+        if (!grouped_buttons.includes(devkey)) {
+          createButton(roombox, devkey, 'Unknown');
+        }
+      } else if (device_map[devkey].type == 'button' || device_map[devkey].type == 'actionsensor') {
+        if (!grouped_buttons.includes(devkey)) {
+          createButton(roombox, devkey, 'Off');
+        }
+      }
+    });
+
   });
+  house_div.appendChild(housepage);
+  main_div.appendChild(house_div);
 }
+
+function createButton(roombox, dev_id, initstate) {
+    var dev = device_map[dev_id] || console.log('not found: ' + dev_id);
+    var button = document.createElement('DIV');
+    button.id = dev_id.replace(/\//g, '-') + '_button';
+    button.classList.add('button', 'roombutton');
+    button.classList.add(initstate);
+    button.innerHTML = dev.display_name;
+
+    var pl = dev.payload || "0";
+    button.onclick = function(){ mqtt.send(dev.pub_topic, pl);};
+
+    roombox.appendChild(button);
+}
+
 
 function updateHouse(message) {
 
-  var changed = 0;
+  //var payload_is_json = true;
   var topic = message.destinationName;
   var payload = message.payloadString;
+  //var dev_key = topic.replace(/\/status\//, '/+/');
   var dev_key = topic.replace(/^([^\/]+)\/[^\/]+\/(.*)/, '$1/+/$2');
+  //var pub_topic = topic.replace(/^([^\/]+)\/[^\/]+\/(.*)/, '$1/toggle/$2');
   var dev_id = dev_key.replace(/\//g, '-');
-  var dev = global_config.device_map.devices[dev_key];
-  var room = dev.location_topic.replace(/\+\/home\/([^\/]+)\/.*/, '$1');
+  var dev = device_map[dev_key];
+  //var room = dev.location_topic.replace(/\+\/home\/([^\/]+)\/.*/, '$1');
 
-  try { var p_obj = JSON.parse(payload); }catch(err){}
-
-
-  var row_el = document.getElementById(dev_id + '_row');
-  if (!row_el) {
-    var tbody_el = document.getElementById(room + '_tbody');
-    row_el = document.createElement("TR");
-    row_el.classList.add('dev_tr');
-    row_el.id = dev_id + '_row';
-    tbody_el.appendChild(row_el);
-    Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
-      var td = document.createElement("TD");
-      td.id = dev_id + '_' + e;
-      row_el.appendChild(td);
-    });
-
-    seen_devices[dev_key] = dev;
-  }
+  try { var p_obj = JSON.parse(payload); } catch(err) { }
+  try { var button = document.getElementById(dev_id + '_button'); } catch(err) { }
 
   
-  if (typeof(p_obj.val) !== 'undefined') {
-    // payload is in deed an object!
-    p_obj.name = dev.display_name;
-    Object.keys(global_config.sensor_headers).forEach(function(e, i, a) {
-      if (seen_devices[dev_key][e] !== p_obj[e]) {
-        td = document.getElementById(dev_id + '_' + e);
-        td.innerHTML = p_obj[e];
-        seen_devices[dev_key][e] = p_obj[e];
-        changed = 1;
+  // read sensor data and put it in the roominfo table
+  if (dev.type == 'actionsensor' || dev.type == 'sensor') {
+    if (typeof(p_obj.val) !== 'undefined') {
+      Object.keys(global_config.roomheader_tags).forEach(function(e, i, a) {
+        roominfoitem = document.getElementById(dev.room + '_' + e);
+        roominfoitem.innerHTML = '<div class="cell_left">' + global_config.roomheader_tags[e][0] + '</div><div class="cell_right">' + p_obj[e] + global_config.roomheader_tags[e][1] + '</div>';
+      });
+
+      if (button && dev.decay) {
+        button.classList.remove('Unknown', 'On', 'Off', 'decay');
+        clearTimeout(global_config.button_timers[dev_id]); 
       }
-    });
-  } else {
-    // payload is just a simple value
-    if (seen_devices[dev_key]['val'] !== payload) {
-      if (payload == 1) {
-        row_el.classList.add('success');
+
+    }
+
+  // update buttons
+  } else if (dev.type == 'onoff' || dev.type == 'button') {
+    button.classList.remove('Unknown', 'On', 'Off', 'decay');
+    if (dev.decay) { clearTimeout(global_config.button_timers[dev_id]); }
+
+    // onoff devices get their payload updated dynamically
+    if (dev.type == 'onoff') {
+
+      if (payload === "1" || p_obj.val == "1") {
+        button.classList.add('On');
+        button.onclick = function(){ mqtt.send(dev.pub_topic, "0");};
+      } else if (payload === "0" || p_obj.val == "0") {
+        button.onclick = function(){ mqtt.send(dev.pub_topic, "1");};
+        button.classList.add('Off');
       }
-      td = document.getElementById(dev_id + '_name');
-      td.innerHTML = dev.display_name;
-      td = document.getElementById(dev_id + '_val');
-      td.innerHTML = payload;
-      seen_devices[dev_key]['val'] = payload;
-      changed = 1;
+
+    // button devices have static payload but update the display_name
+    } else if (dev.type == 'button') {
+      if (typeof(p_obj.val) !== 'undefined') {
+        if (typeof(p_obj.display_name) == 'undefined' || (p_obj.display_name == '##reset##')) {
+          p_obj.display_name = dev.display_name;
+        }
+        button.innerHTML = p_obj.display_name;
+
+        if (p_obj.val == 1) {
+          button.classList.add('On');
+        } else if (p_obj.val == 0) {
+          button.classList.add('Off');
+        }
+      }
     }
   }
-  if (changed == 1) {
-    row_el.classList.add('highlight');
-    setTimeout(function() {
-      row_el.classList.remove('highlight');
-    }, 10);
+
+  if (button && dev.decay) {
+    global_config.button_timers[dev_id] = setTimeout(function(){
+      button.classList.add('decay');
+      button.classList.add('Unknown');
+    }, 10000);
   }
 
 }
