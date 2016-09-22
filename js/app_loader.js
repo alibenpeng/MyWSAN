@@ -195,8 +195,8 @@ function drawNav() {
     [ "#public_transport", "Public Transport" ],
     [ "#sensors", "Sensors" ],
     [ "#buttons", "Buttons" ],
-    [ "http://wsan1.intern.gottistdoof.net/sm/index.html", "Smartmeter" ],
-    [ "http://wsan1.intern.gottistdoof.net:1880", "Node-Red" ],
+    [ "http://wsan1/sm/index.html", "Smartmeter" ],
+    [ "http://wsan1:1880", "Node-Red" ],
   ];
 
   var nav_bar = document.createElement("NAV");
@@ -932,7 +932,7 @@ function createButton(roombox, dev_id, initstate) {
     button.classList.add(initstate);
     button.innerHTML = dev.display_name;
 
-    var pl = dev.payload || "0";
+    var pl = dev.payload || "1";
     button.onclick = function(){ mqtt.send(dev.pub_topic, pl);};
 
     roombox.appendChild(button);
@@ -963,15 +963,12 @@ function updateHouse(message) {
         roominfoitem.innerHTML = '<div class="cell_left">' + global_config.roomheader_tags[e][0] + '</div><div class="cell_right">' + p_obj[e] + global_config.roomheader_tags[e][1] + '</div>';
       });
 
-      if (button && dev.decay) {
-        button.classList.remove('Unknown', 'On', 'Off', 'decay');
-        clearTimeout(global_config.button_timers[dev_id]); 
-      }
-
     }
 
   // update buttons
-  } else if (dev.type == 'onoff' || dev.type == 'button') {
+  } 
+
+  if (dev.type == 'onoff' || dev.type == 'button' || dev.type == 'actionsensor') {
     button.classList.remove('Unknown', 'On', 'Off', 'decay');
     if (dev.decay) { clearTimeout(global_config.button_timers[dev_id]); }
 
@@ -987,7 +984,7 @@ function updateHouse(message) {
       }
 
     // button devices have static payload but update the display_name
-    } else if (dev.type == 'button') {
+    } else if (dev.type == 'button' || dev.type == 'actionsensor') {
       if (typeof(p_obj.val) !== 'undefined') {
         if (typeof(p_obj.display_name) == 'undefined' || (p_obj.display_name == '##reset##')) {
           p_obj.display_name = dev.display_name;

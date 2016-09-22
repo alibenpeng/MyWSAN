@@ -1,5 +1,5 @@
 // host = '172.16.153.122';	// hostname or IP address
-host = 'wsan1.intern.gottistdoof.net';	// hostname or IP address
+host = 'wsan1';	// hostname or IP address
 port = 8001;
 useTLS = true;
 username = 'jsclient';
