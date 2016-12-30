@@ -932,7 +932,7 @@ function createButton(roombox, dev_id, initstate) {
     button.classList.add(initstate);
     button.innerHTML = dev.display_name;
 
-    var pl = dev.payload || "1";
+    var pl = JSON.stringify(dev.payload) || "1";
     button.onclick = function(){ mqtt.send(dev.pub_topic, pl);};
 
     roombox.appendChild(button);
