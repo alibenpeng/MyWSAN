@@ -26,11 +26,15 @@ var sensor_headers =  {
   name: "Name",
   val: "Value",
   light: "Light",
-  temp: "Temperature",
+  temp1: "Temperature 1",
+  temp2: "Temperature 2",
   humi: "Humidity",
+  pres: "Pressure hPa",
   vsol: "V Solar",
   vbat: "V Bat.",
   moved: "Movement",
+  ph: "Ph",
+  ec: "EC",
   lowbat: "Bat. Low",
 };
 
@@ -405,8 +409,8 @@ function renderHouse() {
 };
 
 function renderSensors() {
-  mqtt.subscribe('+/status/sensornode/#', {qos: 0});
-  topics.push('+/status/sensornode/#');
+  mqtt.subscribe('+/status/sensor/#', {qos: 0});
+  topics.push('+/status/sensor/#');
   if (!pages['sensors']) {
     drawSensorPage();
     pages['sensors'] = 1;
